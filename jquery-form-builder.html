@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en" encoding="utf8">
+    <head>
+        <title>Demo form builder</title>
+        <meta charset="UTF-8">
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+        <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+        <style>
+         #target, #target tr, #target td,
+         .droptarget{
+             border: 1px solid lightgray;
+         }
+
+         .dragover {
+             background-color: lightgray;
+         }
+        </style>
+        <script>
+         // draggable textfield formcomponent
+         (function($) {
+
+             $.fn.formcomponent_textfield = function(options) {
+
+                 this.options = $.extend({}, options);
+
+                 providePublicFunctions(this);
+                 // pseudo inheritance
+                 this.formcomponent(options);
+                 init(this);
+
+                 return this;
+
+             };
+
+             function init(self) {
+                 self.setState($.extend({}, self.getState()));
+             }
+
+             function providePublicFunctions(self) {
+                 self.renderThumbnail = function() {
+                     return renderThumbnail(self);
+                 };
+                 self.renderEditor = function() {
+                     return renderEditor(self);
+                 };
+                 self.createEditor = function(container) {
+                     return createEditor(self, container);
+                 };
+                 self.on("updateState", function(state) {
+                     console.log("state updated!");
+                     onUpdateState(self, state);
+                 });
+             }
+
+             function renderThumbnail(self) {
+                 var label = $('<label>').text(self.options.title);
+                 label.append($('<input type="text" size="5" placeholder="textfield"/>').prop("placeholder", self.options.helptext));
+                 return label;
+             }
+
+             // editor mode will allow movement of the element, instead of copying it
+             function createEditor(self, container) {
+                 console.log("createEditor");
+                 var options = $.extend({}, self.options, {
+                     "mode": "editor",
+                 });
+
+                 var editor = $("<div>").formcomponent_textfield(options);
+                 //editor.setState(self.getState());
+                 container.append(editor);
+                 return editor;
+             }
+
+             function renderEditor(self) {
+                 var form = self.baseRenderEditor();
+                 var label = renderThumbnail(self);
+                 form.append(label);
+                 return form;
+             }
+
+             function onUpdateState(self, state) {
+                 
+             }
+
+         }(jQuery));
+        </script>
+        <script>
+         // draggable form component
+         // this is a base for all form components and contains everything that all components share
+         // all components can be dragged from a palette to a canvas
+         // all components can have an editor representation that allows to configure properties
+         (function($) {
+
+             $.fn.formcomponent = function(options) {
+
+                 this.options = $.extend({}, {
+                     // palette - component can be dragged on a canvas
+                     // editor - component is on canvas and can be moved and configured
+                     "mode": "palette"
+                 }, options);
+
+                 providePublicFunctions(this);
+                 init(this);
+                 registerDragDropEventListeners(this);
+
+                 console.log("component constructor with required " + this.getState().required);
+                 return this;
+
+             };
+
+             function init(self) {
+                 console.log("init formcomponent component");
+                 self.addClass("formComponent");
+                 self.setState({
+                     "required": false,
+                 });
+                 if (self.options.mode === "palette") {
+                     self.append(self.renderThumbnail().addClass("draggable").prop("draggable", "true"));
+                 } else if (self.options.mode === "editor") {
+                     self.append(self.renderEditor().addClass("draggable").prop("draggable", "true"));
+                 }
+             }
+
+             function providePublicFunctions(self) {
+                 self.getId = function() {
+                     return getId(self);
+                 };
+                 self.getState = function() {
+                     return getState(self);
+                 };
+                 self.setState = function(state) {
+                     self.trigger("updateState", state);
+                     setState(self, state);
+                 };
+                 self.baseRenderEditor = function() {
+                     return baseRenderEditor(self);
+                 };
+                 self.on("updateState", function(ev, state) {
+                     onUpdateState(self, state);
+                 });
+             }
+
+             function getState(self, prop) {
+                 var state = self.data("state");
+                 if (prop && prop in state) {
+                     return state[prop];
+                 }
+                 return state;
+             }
+
+             function setState(self, state) {
+                 return self.data("state", state);
+             }
+
+             function getId(self) {
+                 return self.options.name;
+             }
+
+             // stores table row and col index in drag data so that later a moved editor's origin can be removed
+             function registerDragDropEventListeners(self) {
+                 self.find(".draggable")
+                     .on("dragstart", function(ev) {
+                         var options = $.extend({}, self.options);
+                         var state = $.extend({}, self.getState());
+                         var data = {
+                             "options": options,
+                             "state": state,
+                         };
+                         if (options.mode === "editor") {
+                             var cell = $(ev.target).parents("td").get(0);
+                             var row = $(cell).parents("tr").get(0);
+                             data = $.extend(data, {
+                                 "drag": {
+                                     "row": row.rowIndex,
+                                     "col": cell.cellIndex,
+                                 }
+                             });
+                         }
+
+                         ev.originalEvent.dataTransfer.setData("text/plain", JSON.stringify(data));
+                     });
+             }
+
+             // editor settings for all form components
+             function baseRenderEditor(self) {
+                 console.log("baseRenderEditor");
+                 var container = $("<div>").addClass("editor");
+                 var togglePropertiesButton = $("<button>")
+                     .text("...")
+                     .addClass("draggable")
+                     .addClass("editortoggle");
+                     //.css("visibility", "hidden");
+                 container.append(togglePropertiesButton);
+                 var form = $("<form>");
+                 container.append(form);
+                 var requiredCheckbox = $("<label>")
+                     .text("Required")
+                     .append($('<input type="checkbox">')
+                         .addClass("requiredCheckbox")
+                         .prop("checked", self.getState("required"))
+                     );
+                 requiredCheckbox.on("change", function(ev){
+                     console.log("required changed!");
+                     self.setState($.extend({}, self.getState(), {
+                         "required": ev.target.checked,
+                     }));
+                     console.log("required set to " + self.getState().required);
+                 });
+                 form.append(requiredCheckbox);
+                 return container;
+             }
+
+             function onUpdateState(self, state) {
+                 console.log(state);
+                 console.log("onUpdateState with new required " + state.required);
+                 var requiredCheckbox = self.find(".requiredCheckbox");
+                 requiredCheckbox.prop('checked', state.required);
+             }
+
+         }(jQuery));
+        </script>
+        <script>
+         // form builder canvas where form components can be dropped and configured
+         (function($) {
+
+             $.fn.formbuildercanvas = function(options) {
+                 this.options = $.extend({}, options);
+
+                 init(this);
+                 providePublicFunctions(this);
+                 registerDragDropEventListeners(this);
+                 makeResizable(this);
+
+                 return this;
+             };
+
+             function providePublicFunctions(self) {
+                 self.registerComponent = function (component) {
+                     return registerComponent(self, component);
+                 };
+                 self.getComponent = function(componentId) {
+                     return getComponent(self, componentId);
+                 };
+                 self.getCell = function(row, col) {
+                     return getCell(self, row, col);
+                 };
+             }
+
+             function getComponent(self, componentId) {
+                 var state = self.data("state");
+                 return state.formComponents[componentId];
+             }
+
+             function getCell(self, row, col) {
+                 return self.find("tr:nth-child("+(row+1)+") td:nth-child("+(col+1)+")");
+             }
+
+             function registerComponent(self, component) {
+                 var state = self.data("state");
+                 state.formComponents[component.getId()] = component;
+             }
+
+             function init(self) {
+                 self.data("state", {
+                     "formComponents": {},
+                 });
+                 self.append(render());
+             }
+
+             function clearDrag(self) {
+                 self.find(".dragover").removeClass("dragover");
+             }
+
+             function dropHandler(self, ev) {
+                 ev.preventDefault();
+
+                 if (!$(ev.target).hasClass("droptarget")) {
+                     // try to find the next parent that is a drop target
+                     ev.target = $(ev.target).parents(".droptarget").get(0);
+                     if (!$(ev.target).hasClass("droptarget")) {
+                         return false;
+                     }
+                 }
+
+                 // Get the id of the target and add the moved element to the target's DOM
+                 var rawData = ev.originalEvent.dataTransfer.getData("text/plain");
+                 console.log("dropped:");
+                 var data = JSON.parse(rawData);
+                 console.log(data);
+                 var component = self.getComponent(data.options.name);
+
+                 // editors existing in the target are overwritten
+                 $(ev.target).find(".editor").remove();
+                 var editor = component.createEditor($(ev.target));
+
+                 if (data.options.mode === "editor") {
+                     // remove old editor according to x and y coords
+                     var oldCell = self.getCell(data.drag.row, data.drag.col);
+                     var oldEditor = oldCell.find(".editor");
+                     editor.setState(data.state);
+                     oldEditor.remove();
+                 }
+
+                 clearDrag(self);
+             }
+
+             function onDragOver(self, ev) {
+                 ev.preventDefault();
+
+                 if (!$(ev.target).hasClass("droptarget")) {
+                     // try to find the next parent that is a drop target
+                     ev.target = $(ev.target).parents(".droptarget").get(0);
+                     if (!$(ev.target).hasClass("droptarget")) {
+                         return false;
+                     }
+                 }
+
+                 if (!$(ev.target).hasClass("dragover")) {
+                     $(ev.target).addClass("dragover");
+                 }
+
+                 // only use copy when dragging from palette, not when moving the editor
+                 var rawData = ev.originalEvent.dataTransfer.getData("text/plain");
+                 var data = JSON.parse(rawData);
+                 if (data.mode === "editor") {
+                     ev.originalEvent.dataTransfer.dropEffect = "move";
+                 } else {
+                     ev.originalEvent.dataTransfer.dropEffect = "copy";
+                 }
+             }
+
+             // register all event listeners for drag and drop
+             function registerDragDropEventListeners(self) {
+                 self.find("td")
+                     .off("drop dragover dragleave dragend")
+                     .on("drop", function(ev) {
+                         dropHandler(self, ev);
+                     })
+                     .on("dragover", function(ev) {
+                         onDragOver(self, ev);
+                     })
+                     .on("dragleave", function(ev) {
+                         ev.preventDefault();
+
+                         if (!$(ev.target).hasClass("droptarget")) {
+                             // try to find the next parent that is a drop target
+                             ev.target = $(ev.target).parents(".droptarget").get(0);
+                             if (!$(ev.target).hasClass("droptarget")) {
+                                 return false;
+                             }
+                         }
+
+                         if ($(ev.target).hasClass("dragover"))
+                             $(ev.target).removeClass("dragover");
+                     })
+                     .on("dragend", function(ev) {
+                         ev.preventDefault();
+
+                         clearDrag(self);
+                     });
+             }
+
+             function makeResizable(self) {
+                 console.log("make resizable");
+                 self.find("td").resizable({
+                     autoHide: true,
+                     start: function(event, ui) {
+                         var td = event.currentTarget;
+                         var tr = $(td).parent("tr");
+                         var col = tr.find("td").index(td);
+
+                         // reset width of whole column
+                         self.find("td:nth-child(" + (col + 1) + ")").css("width", "");
+
+                         // reset height of whole row
+                         $(td).siblings("td").css("height", "");
+                     }
+                 });
+             }
+
+             function render() {
+                 var table = $("<table>");
+                 for (var y = 0; y < 3; y++) {
+                     var row = $("<tr>");
+                     table.append(row);
+                     for (var x = 0; x < 5; x++) {
+                         var cell = $("<td>")
+                             .css("width", "100px")
+                             .css("height", "20px")
+                             .addClass("droptarget");
+                         row.append(cell);
+                     }
+                 }
+                 return table;
+             }
+         }(jQuery));
+        </script>
+        <!-- Anything above here should be reusable framework code -->
+        <script>
+         jQuery(function() {
+
+             // link draggable components to the form builder canvas
+             var textfield_firstname = $("#firstname").formcomponent_textfield({
+                 "name": "firstname",
+                 "title": "First name",
+                 "helptext": "Please enter your first name",
+             });
+             var textfield_lastname = $("#lastname").formcomponent_textfield({
+                 "name": "lastname",
+                 "title": "Last name",
+                 "helptext": "Please enter your last name",
+             });
+             var formBuilder = $("#formbuilder").formbuildercanvas();
+             formBuilder.registerComponent(textfield_firstname);
+             formBuilder.registerComponent(textfield_lastname);
+
+             /*
+             $(".insertrow")
+                 .click(function() {
+                     var tr = $("<tr/>");
+                     $("#target").append(tr);
+                     $("#target tr:first-child td").each(function() {
+                         tr.append(create_cell());
+                     });
+                     setup_table();
+                 });
+
+             $(".insertrow").click();
+             $(".insertrow").click();
+             $(".insertrow").click();
+
+             $(".insertcol").click(function() {
+                 $("#target tr").append(create_cell());
+                 setup_table();
+             });
+
+             $(".insertcol").click();
+             $(".insertcol").click();
+             $(".insertcol").click();
+             $(".insertcol").click();
+             */
+         });
+        </script>
+    </head>
+    <body>
+        <h1>Demo form builder</h1>
+        <div>
+            <div id="firstname"></div>
+            <div id="lastname"></div>
+            <!-- 
+            <span class="draggable" draggable="true" data-dragdata="Label">
+                Label
+            </span><br>
+            <button class="draggable" draggable="true" data-dragdata="Button">
+                Button
+            </button><br>
+                 <input type="text" class="draggable" draggable="true" readonly="true" value="TextField" data-dragdata="TextField" /> -->
+        </div>
+
+        <hr/>
+
+        <div id="formbuilder">
+        </div>
+
+        <!-- <div>
+             <button class="insertrow">
+             Insert row (to the top)
+             </button>
+             <button class="removerow">
+             Remove row
+             </button>
+             <button class="insertcol">
+             Insert column (to the left)
+             </button>
+             <button class="removerow">
+             Remove column
+             </button>
+             </div> -->
+    </body>
+</html>
