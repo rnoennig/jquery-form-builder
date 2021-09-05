@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en" encoding="utf8">
+    <head>
+        <title>Demo dynamic grid</title>
+        <meta charset="UTF-8">
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+        <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+        <style>
+         .container .row {
+             display: flex;
+             justify-content: space-between;
+         }
+
+         .container div.col {
+             border: lightgray 1px solid;
+         }
+
+         /************************** Overlay *************************/
+
+         .arrow {
+             border: solid black;
+             border-width: 0 3px 3px 0;
+             display: inline-block;
+             padding: 3px;
+             visibility: hidden;
+             position: absolute;
+         }
+
+         .right .arrow {
+             transform: rotate(-45deg);
+             -webkit-transform: rotate(-45deg);
+             visibility: visible;
+         }
+
+         .left .arrow {
+             transform: rotate(135deg);
+             -webkit-transform: rotate(135deg);
+             visibility: visible;
+         }
+
+         .up .arrow {
+             transform: rotate(-135deg);
+             -webkit-transform: rotate(-135deg);
+             visibility: visible;
+         }
+
+         .down .arrow {
+             transform: rotate(45deg);
+             -webkit-transform: rotate(45deg);
+             visibility: visible;
+         }
+
+         .overlay {
+             position: absolute;
+         }
+
+         .overlay.up,
+         .overlay.down {
+             left: 50%;
+             right: 50%;
+         }
+
+         .overlay.left,
+         .overlay.right {
+             top: 50%;
+             bottom: 50%;
+         }
+
+         .overlay.up {
+             top: 3px;
+             transform: translate(-5px, 1px);
+         }
+
+         .overlay.down {
+             bottom: 3px;
+             transform: translate(-5px, -10px);
+         }
+
+         .overlay.left {
+             left: 3px;
+             transform: translate(0, -5px);
+         }
+
+         .overlay.right {
+             right: 3px;
+             transform: translate(-9px, -5px);
+         }
+
+         .col {
+             position: relative;
+         }
+
+         /************************* grid container ***************************/
+
+         .container .col {}
+
+         .container .middle.row .middle.col {
+             min-height: 50px;
+         }
+
+         .container .middle.col {
+             width: 100%;
+         }
+
+         .container .first.row,
+         .container .last.row {
+             min-height: 10px;
+         }
+
+         .container .first.col,
+         .container .last.col {
+             min-width: 10px;
+         }
+
+        </style>
+        <script>
+            // TODOs
+
+            // * insert new cols <- OK
+            // * insert new rows <- OK
+            // * display edge detection <- OK
+            // * move items <- OK
+            // * swap items <- OK
+            // * drag from outside <- OK
+            // * remove items when cell is empty
+
+            $(function() {
+                var applyGridAction = function(ev, action) {
+                    var rawData = ev.originalEvent.dataTransfer.getData("text/plain");
+                    if (!rawData) {
+                        return false;
+                    }
+                    var data = JSON.parse(rawData);
+                    var container = $(".container").first();
+                    var oldCell = getGridCell(data.pos);
+                    var newCell = getGridCell(action.elementAt);
+                    if (action.actionType == "move") {
+                        var oldContent = oldCell.find("[draggable=true]");
+                        var newContent = newCell.find("[draggable=true]");
+                        if (action.drop) {
+                            var newContent = $('<button draggable="true">').text('Copied');
+                            newCell.find('[draggable=true]').remove();
+                            newContent.appendTo(newCell);
+                            setupDropListeners(newCell);
+                        }
+                        if (!action.drop) {
+                            oldContent.appendTo(newCell);
+                            newContent.appendTo(oldCell);
+                        }
+                    }
+                    if (action.actionType == "split") {
+                        console.log("split");
+                        var newCellRow = newCell.parents(".row").first();
+                        var newRow = $('<div class="middle row">');
+                        var newCol = $('<div class="middle col">').append(
+                            $('<span class="overlay">').append(
+                                $('<i class="arrow">')
+                            )
+                        );
+                        newRow.append(newCol);
+                        if (action.splitDirection.dir == "left") {
+                            newCell.before(newCol);
+                        }
+                        if (action.splitDirection.dir == "right") {
+                            newCell.after(newCol);
+                        }
+                        if (action.splitDirection.dir == "up") {
+                            newCellRow.before(newRow);
+                        }
+                        if (action.splitDirection.dir == "down") {
+                            newCellRow.after(newRow);
+                        }
+                        if (action.drop) {
+                            var newContent = $('<button draggable="true">').text('Copied');
+                            newCol.find('[draggable=true]').remove();
+                            newContent.appendTo(newCol);
+                            setupDropListeners(newCol);
+                        }
+                        if (!action.drop) {
+                            oldCell.find("[draggable=true]").appendTo(newCol);
+                        }
+
+                        setupDropListeners(newCol);
+                    }
+
+                    // if cell/row becomes empty after move, remove it
+                    if (oldCell.find("[draggable=true]").length == 0) {
+                        console.log("oldCell became empty!");
+                        var oldCellRow = oldCell.parents(".row").first();
+                        var colCount = oldCellRow.find(".col").length;
+                        if (colCount == 1) {
+                            // remove empty row
+                            oldCellRow.remove();
+                        } else {
+                            oldCell.remove();
+                        }
+
+                    }
+
+                };
+                var getGridCell = function(pos) {
+                    if (!pos) {
+                        return undefined;
+                    }
+                    var container = $(".container").first();
+                    var gridCell = container.find(".row:nth-child(" + (pos.y + 1) + ") .col:nth-child(" + (pos.x + 1) + ")");
+                    return gridCell;
+                };
+                var getGridCellPosition = function(element) {
+                    var cell = element;
+                    if (!element.hasClass("col")) {
+                        cell = element.parents(".col").first();
+                    }
+                    return {
+                        "x": cell.index(),
+                        "y": cell.parent().index(),
+                    };
+                };
+                var determineDropAction = function(ev) {
+                    var container = $(ev.target).parents(".container").first();
+                    var element = $(ev.target);
+
+                    if (!element.hasClass("col")) {
+                        return false;
+                    }
+
+                    var relativeTop = ev.clientY - element.offset().top;
+                    var relativeLeft = ev.clientX - element.offset().left;
+                    var relativeRight = element.width() + element.offset().left - ev.clientX;
+                    var relativeBottom = element.height() + element.offset().top - ev.clientY;
+
+                    var threshold = 15;
+
+                    var splitDirection = {};
+                    splitDirection.x = 0;
+                    splitDirection.y = 0;
+                    if (relativeTop <= threshold) {
+                        splitDirection.y = -1;
+                        splitDirection.dir = "up";
+                    }
+                    if (relativeLeft <= threshold) {
+                        splitDirection.x = -1;
+                        splitDirection.dir = "left";
+                    }
+                    if (relativeRight <= threshold) {
+                        splitDirection.x = 1;
+                        splitDirection.dir = "right";
+                    }
+                    if (relativeBottom <= threshold) {
+                        splitDirection.y = 1;
+                        splitDirection.dir = "down";
+                    }
+                    var newElementAt = getGridCellPosition(element);
+
+                    var actionType = "move";
+                    var action = {};
+                    action.drop = false;
+                    action.elementAt = newElementAt;
+                    if (!(splitDirection.x == 0 && splitDirection.y == 0)) {
+                        actionType = "split";
+                        action.splitDirection = splitDirection;
+                    }
+
+                    var rawData = ev.originalEvent.dataTransfer.getData("text/plain");
+                    if (rawData !== '') {
+                        var data = JSON.parse(rawData);
+                        if (data.pos.x == -1) {
+    	                      action.drop = true;
+                        }
+                    }
+
+                    action.actionType = actionType;
+                    return action;
+                };
+
+                var clearOverlay = function() {
+                    var container = $(".container").first();
+                    var overlay = container.find(".overlay");
+                    overlay.removeClass();
+                    overlay.addClass("overlay");
+                };
+
+                var setupDropListeners = function(selector) {
+
+                    selector.find("[draggable=true]").off("dragstart");
+                    selector.off("dragover");
+                    selector.off("drop");
+                    selector.off("dragleave");
+
+                    selector.find("[draggable=true]").on("dragstart", function(ev) {
+                        console.log("dragstart");
+                        var pos = getGridCellPosition($(ev.target));
+                        var data = {};
+                        if (pos) {
+      	                    data.pos = pos;
+                        }
+                        console.log(data);
+                        ev.originalEvent.dataTransfer.setData("text/plain", JSON.stringify(data));
+                    });
+
+                    selector.on("dragover", function(ev) {
+                        ev.preventDefault();
+
+                        // replace event to first col parent
+                        if (!$(ev.target).hasClass("col")) {
+                            ev.target = $(ev.target).parents(".col").get(0);
+                        }
+
+                        var action = determineDropAction(ev);
+                        if (!action) {
+                            return false;
+                        }
+
+                        var element = $(ev.target);
+
+                        var container = $(".container").first();
+                        var cell = getGridCell(action.elementAt);
+                        if (!cell) {
+                            return false;
+                        }
+                        var overlay = cell.find(".overlay");
+
+                        if (action.actionType == "copy") {
+                            if (!overlay.hasClass("copy")) {
+                                clearOverlay();
+                                overlay.addClass("copy");
+                            }
+                        }
+
+                        if (action.actionType == "move") {
+                            if (!overlay.hasClass("move")) {
+                                clearOverlay();
+                                overlay.addClass("move");
+                            }
+                        }
+
+                        if (action.actionType == "split") {
+                            if (!overlay.hasClass("split") || !overlay.hasClass(action.splitDirection.dir)) {
+                                clearOverlay();
+                                overlay.addClass("split");
+                                overlay.addClass(action.splitDirection.dir);
+                            }
+                        }
+                    });
+
+                    selector.on("dragleave", function(ev) {
+                        ev.preventDefault();
+                        clearOverlay();
+                    });
+
+                    selector.on("drop", function(ev) {
+                        ev.preventDefault();
+
+                        // replace event to first col parent
+                        if (!$(ev.target).hasClass("col")) {
+                            ev.target = $(ev.target).parents(".col").get(0);
+                        }
+
+                        var action = determineDropAction(ev);
+                        console.log("drop");
+                        console.log(action);
+
+                        applyGridAction(ev, action);
+                        clearOverlay();
+                    });
+
+                };
+
+                setupDropListeners($(".middle.col"));
+                setupDropListeners($(".palette"));
+
+            });
+
+        </script>
+    </head>
+    <body>
+        <label>Palette:</label>
+        <br>
+        <div class="palette">
+            <button draggable="true">
+                Button
+            </button>
+        </div>
+        <br>
+        <br>
+        <label>Drop area:</label>
+        <div style="width: 500px">
+            <div class="container">
+                <div class="middle row">
+                    <div class="middle col">
+                        <span class="overlay"><i class="arrow"></i></span>
+                        <button draggable="true">
+                            Drag me A
+                        </button>
+                    </div>
+                    <div class="middle col">
+                        <span class="overlay"><i class="arrow"></i></span>
+                        <button draggable="true">
+                            Drag me B
+                        </button>
+                    </div>
+                </div>
+                <div class="middle row">
+                    <div class="middle col">
+                        <span class="overlay"><i class="arrow"></i></span>
+                    </div>
+                    <div class="middle col">
+                        <span class="overlay"><i class="arrow"></i></span>
+                    </div>
+                    <div class="middle col">
+                        <span class="overlay"><i class="arrow"></i></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </body>
+</html>
